@@ -55,7 +55,7 @@ def verifica_novo():
 
     if(hora_atual != hora_banco):
         is_new_hora = True
-        ultimo_minuto_rodado = minuto
+        ultimo_minuto_rodado = minuto_atual
         if(hora_atual == 0):
             enviar_dia_lista()
     
@@ -116,6 +116,7 @@ def get_matches_48h():
     end_str = limit_48h.strftime('%Y-%m-%dT%H:%M:%SZ')
     
     url = "https://api.pandascore.co/csgo/matches"
+
     #Furia, Pain, Legacy, Imperial, Sharks, Mibr, Fluxo, RedCanads, Gaimim, Oddik
     ids_dos_times = [124530, 125751, 133708, 3396, 3260, 3250, 131570, 126227, 130566, 131253]
 
@@ -127,7 +128,7 @@ def get_matches_48h():
     }
 
     headers = {
-        "Authorization": f"Bearer {os.getenv('BEARER_TOKEN_API')} ",
+        "Authorization": f"Bearer {os.getenv('BEARER_TOKEN_API')}",
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
@@ -147,8 +148,11 @@ def get_matches_48h():
                 return []
 
         except requests.exceptions.RequestException as e:
-            status_code = e.response.status_code if e.response else "Timeout/Conexão"
-            print(f"Falha na tentativa {i+1}: Status {response}")
+            if(response):
+                status_code = response
+            else:
+                status_code = 'Erro desconhecido'
+            print(f"Falha na tentativa {i+1}: Status {status_code}")
             
             if i < tentativas - 1: # Se não for a última tentativa
                 espera = (i + 1) * 5 # 5s, 10s...
@@ -441,7 +445,7 @@ def uptade_banco_times():
     
 def main_function():
     # print("Primeira carga de dados ao iniciar...")
-    # atualizar_partidas() 
+    atualizar_partidas() 
     registrar_log("bot iniciado e primeira carga de partidas realizada com sucesso.", "Bot Iniciado")
     
     while True:
