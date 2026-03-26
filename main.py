@@ -15,6 +15,7 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
+import discord as dc
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
@@ -270,23 +271,7 @@ def gravar_partidas_banco(partidas):
 
 def avisar_mudanca_horario(lista_mudancas):
     global CONFIG_WEBHOOKS
-    log.warning(f"Enviando aviso de mudança de horário para {len(lista_mudancas)} partida(s)")
-    for m in lista_mudancas:
-        dt_v = datetime.fromisoformat(m['velho'].replace('Z', '+00:00')).strftime('%d/%m %H:%M')
-        dt_n = datetime.fromisoformat(m['novo'].replace('Z', '+00:00')).strftime('%d/%m %H:%M')
-        
-        texto = f"⚠️ **HORÁRIO ALTERADO**\n**{m['time_1']} vs {m['time_2']}**\nDe: ` {dt_v} `\nPara: ` {dt_n} `"
-        
-        for config in CONFIG_WEBHOOKS:
-            mencoes_str = " ".join(config["mencoes"])
-            
-            payload = {"content": f"{mencoes_str}\n{texto}"}
-            
-            try:
-                r = requests.post(config["url"], json=payload, timeout=10)
-                r.raise_for_status()
-            except Exception as e:
-                registrar_log(f"Erro ao enviar aviso de mudança de horário para {config['url']}: {e}")
+    dc.avisar_mudanca_horario(lista_mudancas, CONFIG_WEBHOOKS)
 
 def verifica_warm():
     conn = get_db()
@@ -356,34 +341,10 @@ def enviar_dia_lista():
     ORDER BY timestamp_BR ASC
     """
     
-    try:
-        cursor.execute(query, (hoje_sql,))
-        partidas = cursor.fetchall()
-        
-        if not partidas:
-            return
+    cursor.execute(query, (hoje_sql,))
+    partidas = cursor.fetchall()
 
-        mensagem = f"📅 **PARTIDAS DE HOJE ({hoje_display})**\n\n"
-        
-        for p in partidas:
-            t1, t2, ts_br, liga = p
-            hora = datetime.fromisoformat(ts_br.replace('Z', '+00:00')).strftime('%H:%M')
-            mensagem += f"• `{hora}` - **{t1} vs {t2}** ({liga})\n"
-
-        for config in CONFIG_WEBHOOKS:
-            url = config["url"]
-            mencoes = " ".join(config["mencoes"])
-            
-            payload = {
-                "content": f"{mencoes}\n{mensagem}"
-            }
-            
-            r = requests.post(url, json=payload)
-            r.raise_for_status()
-            
-        log.info(f"Lista de partidas do dia enviada com sucesso para {len(CONFIG_WEBHOOKS)} webhook(s)")
-    except Exception as e:
-        registrar_log(f"Erro ao enviar lista do dia: {e}")
+    dc.enviar_dia_lista(partidas, CONFIG_WEBHOOKS, hoje_display)
 
 def realiza_warm(lista_2h, lista_1h, lista_10min):
     conn = get_db()
@@ -402,42 +363,7 @@ def realiza_warm(lista_2h, lista_1h, lista_10min):
             partida = cursor.fetchone()
 
             if partida:
-                t1, t2, hora, liga_nome, liga_logo = partida
-                dt_obj = datetime.fromisoformat(hora.replace('Z', '+00:00'))
-                hora_formatada = dt_obj.strftime('%d/%m às %H:%M')
-
-                embed = {
-                    "title": f"{titulo}",
-                    "description": f"**{t1} vs {t2}**",
-                    "color": cor,
-                    "thumbnail": {"url": liga_logo}, 
-                    "fields": [
-                        {"name": "Horário", "value": f" `{hora_formatada}`", "inline": True},
-                        {"name": "Campeonato", "value": f"`{liga_nome}`", "inline": True}
-                    ],
-                    "footer": {
-                        "text": "Horários podem mudar.\n© Rian"
-                    }
-                }
-
-                for config in CONFIG_WEBHOOKS:
-                    url = config["url"]
-                    mencoes_lista = config["mencoes"]
-                    
-                    string_mencoes = " ".join(mencoes_lista)
-                    conteudo = f"{string_mencoes}" if mencoes_lista else ""
-
-                    payload = {
-                        "content": conteudo,
-                        "embeds": [embed]
-                    }
-
-                    try:
-                        r = requests.post(url, json=payload)
-                        r.raise_for_status()
-                    except Exception as e:
-                        registrar_log(f"Erro ao enviar para o webhook {url}: {e}")
-
+                dc.enviar_warm(id_api, campo, titulo, cor, partida, CONFIG_WEBHOOKS)
                 cursor.execute(f"UPDATE partidas SET {campo} = 1 WHERE id_api = ?", (id_api,))
 
     conn.commit()
@@ -514,28 +440,6 @@ def main_function():
             processar_dia()
 
 def registrar_log(mensagem_erro, título="Erro Detectado no Bot"):
-    log.error(mensagem_erro)
-    WEBHOOK_ERROS = os.getenv("WEBHOOK_URL_3")
-    agora = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime('%d/%m/%Y %H:%M:%S')
-    
-    payload = {
-        "content": "Atenção!", 
-        "embeds": [{
-            "title": título,
-            "description": f"```python\n{mensagem_erro}\n```",
-            "color": 15158332, 
-            "fields": [
-                {"name": "Data e Hora", "value": f"`{agora}`", "inline": True}
-            ],
-            "footer": {"text": "© Rian"}
-        }]
-    }
-
-    try:
-        r = requests.post(WEBHOOK_ERROS, json=payload)
-        r.raise_for_status()
-    except Exception as e:
-        log.error(f"Falha crítica ao enviar log para o Discord: {e}")
-
+    dc.registrar_log(mensagem_erro, título, os.getenv("WEBHOOK_URL_3"))
 
 iniciar()
