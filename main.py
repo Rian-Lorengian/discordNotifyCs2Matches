@@ -8,8 +8,14 @@ import requests
 from zoneinfo import ZoneInfo
 import os
 
-database = sqlite3.connect("cs2_matches.db")
-cursor = database.cursor()
+DB_PATH = "cs2_matches.db"
+_conn = None
+
+def get_db():
+    global _conn
+    if _conn is None:
+        _conn = sqlite3.connect(DB_PATH)
+    return _conn
 
 def iniciar():
     # registrar_log('Bot Iniciado', "Bot Iniciado")
@@ -23,6 +29,8 @@ def get_data():
     return (agora.hour, agora.minute, agora.day)
 
 def get_data_banco():
+    conn = get_db()
+    cursor = conn.cursor()
     cursor.execute("SELECT last_hour, last_minuto, last_dia FROM times WHERE id = 1")
     hora, minuto, dia = cursor.fetchone()
     return (hora, minuto, dia)
@@ -69,6 +77,8 @@ def verifica_novo():
 
 
 def start_banco():
+    conn = get_db()
+    cursor = conn.cursor()
     cursor.execute('''
                 CREATE TABLE IF NOT EXISTS times(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,7 +103,7 @@ def start_banco():
             warm_final INTEGER DEFAULT 0
         )''')
 
-    database.commit()
+    conn.commit()
 
     cursor.execute("SELECT * from times WHERE id = 1")
     temp_a = cursor.fetchone()
@@ -106,7 +116,7 @@ def start_banco():
         sql = "UPDATE times SET last_hour = ?, last_minuto = ?, last_dia = ?, first_req = ?, sec_req = ? WHERE id = 1"
     
     cursor.execute(sql, (hora, minuto, dia, False, False))
-    database.commit()
+    conn.commit()
 
 def get_matches_48h():
     now = datetime.now(timezone.utc)
@@ -142,7 +152,7 @@ def get_matches_48h():
             
             
             if(response):
-                # print("Sucesso na requisição!")
+                print("Sucesso na requisição!")
                 return response.json()
             else:
                 return []
@@ -191,6 +201,8 @@ def processar_matches():
     return partidas_limpas
 
 def gravar_partidas_banco(partidas):
+    conn = get_db()
+    cursor = conn.cursor()
     hoje_br = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime('%Y-%m-%d')
     
     sql_upsert = """
@@ -230,7 +242,7 @@ def gravar_partidas_banco(partidas):
         valores = (p['id_api'], p['time_1'], p['time_2'], p['liga_nome'], p['liga_logo'], p['timestamp_utc'], p['timestamp_br'])
         cursor.execute(sql_upsert, valores)
     
-    database.commit()
+    conn.commit()
 
     if mudancas_horario:
         avisar_mudanca_horario(mudancas_horario)
@@ -254,6 +266,8 @@ def avisar_mudanca_horario(lista_mudancas):
                 pass
 
 def verifica_warm():
+    conn = get_db()
+    cursor = conn.cursor()
     lista_2h = []
     lista_1h = []
     lista_10min = []
@@ -295,15 +309,17 @@ CONFIG_WEBHOOKS = [
         "mencoes": ["Aviso"]
     },
 
-    {
-        "url": os.getenv("WEBHOOK_URL_2"),
-        "mencoes": ["<@&796530374519160872>"]
-    },
+    # {
+    #     "url": os.getenv("WEBHOOK_URL_2"),
+    #     "mencoes": ["<@&796530374519160872>"]
+    # },
 
     ]
 
 def enviar_dia_lista():
     global CONFIG_WEBHOOKS
+    conn = get_db()
+    cursor = conn.cursor()
     
     agora_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
     hoje_sql = agora_br.strftime('%Y-%m-%d') # Formato para o banco (YYYY-MM-DD)
@@ -345,7 +361,8 @@ def enviar_dia_lista():
         registrar_log(f"Erro ao enviar lista do dia: {e}")
 
 def realiza_warm(lista_2h, lista_1h, lista_10min):
-
+    conn = get_db()
+    cursor = conn.cursor()
     global CONFIG_WEBHOOKS
 
     categorias = [
@@ -398,10 +415,12 @@ def realiza_warm(lista_2h, lista_1h, lista_10min):
 
                 cursor.execute(f"UPDATE partidas SET {campo} = 1 WHERE id_api = ?", (id_api,))
 
-    database.commit()
+    conn.commit()
 
 
 def deletar_partidas_antigas():
+    conn = get_db()
+    cursor = conn.cursor()
     try:
 
         query = """
@@ -412,7 +431,7 @@ def deletar_partidas_antigas():
         cursor.execute(query)
         linhas_removidas = cursor.rowcount
         
-        database.commit()
+        conn.commit()
         
         if linhas_removidas > 0:
             registrar_log(f"Limpeza concluída: {linhas_removidas} partidas antigas removidas.", "Limpeza finalizada com sucesso")
@@ -438,10 +457,12 @@ def processar_dia():
     deletar_partidas_antigas()
 
 def uptade_banco_times():
+    conn = get_db()
+    cursor = conn.cursor()
     hora, minuto, dia = get_data() 
     sql = "UPDATE times SET last_hour = ?, last_minuto = ?, last_dia = ? WHERE id = 1"
     cursor.execute(sql, (hora, minuto, dia))
-    database.commit()
+    conn.commit()
     
 def main_function():
     # print("Primeira carga de dados ao iniciar...")
