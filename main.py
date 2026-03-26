@@ -261,9 +261,10 @@ def avisar_mudanca_horario(lista_mudancas):
             payload = {"content": f"{mencoes_str}\n{texto}"}
             
             try:
-                requests.post(config["url"], json=payload, timeout=10)
-            except:
-                pass
+                r = requests.post(config["url"], json=payload, timeout=10)
+                r.raise_for_status()
+            except Exception as e:
+                registrar_log(f"Erro ao enviar aviso de mudança de horário para {config['url']}: {e}")
 
 def verifica_warm():
     conn = get_db()
