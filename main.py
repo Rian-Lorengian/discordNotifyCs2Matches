@@ -1,9 +1,11 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 import requests
 from zoneinfo import ZoneInfo
-from dotenv import load_dotenv
 import os
 
 database = sqlite3.connect("cs2_matches.db")
@@ -439,8 +441,6 @@ def uptade_banco_times():
     
 def main_function():
     # print("Primeira carga de dados ao iniciar...")
-
-    load_dotenv()
     # atualizar_partidas() 
     registrar_log("bot iniciado e primeira carga de partidas realizada com sucesso.", "Bot Iniciado")
     
