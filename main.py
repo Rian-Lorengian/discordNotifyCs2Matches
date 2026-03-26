@@ -1,6 +1,20 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%d/%m/%Y %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),                        # console
+        logging.FileHandler("bot.log", encoding="utf-8")  # arquivo
+    ]
+)
+
+log = logging.getLogger(__name__)
+
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
@@ -64,6 +78,7 @@ def verifica_novo():
     if(hora_atual != hora_banco):
         is_new_hora = True
         ultimo_minuto_rodado = minuto_atual
+        log.info("Nova hora detectada - atualizando partidas")
         if(hora_atual == 0):
             enviar_dia_lista()
     
@@ -72,6 +87,7 @@ def verifica_novo():
 
     if(dia_atual != dia_banco):
         is_new_dia = True
+        log.info("Novo dia detectado - executando limpeza")
 
     return is_new_hora, is_new_minuto, is_new_dia
 
@@ -79,6 +95,7 @@ def verifica_novo():
 def start_banco():
     conn = get_db()
     cursor = conn.cursor()
+    log.info("Inicializando banco de dados...")
     cursor.execute('''
                 CREATE TABLE IF NOT EXISTS times(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,6 +121,7 @@ def start_banco():
         )''')
 
     conn.commit()
+    log.info("Tabelas do banco criadas/verficadas com sucesso")
 
     cursor.execute("SELECT * from times WHERE id = 1")
     temp_a = cursor.fetchone()
@@ -146,13 +164,13 @@ def get_matches_48h():
     tentativas = 3
     for i in range(tentativas):
         try:
-            # print(f"Tentativa {i+1} de {tentativas}...")
+            log.info(f"Tentativa {i+1} de {tentativas}...")
             response = requests.get(url, headers=headers, params=params, timeout=15)
             response.raise_for_status() 
             
             
             if(response):
-                print("Sucesso na requisição!")
+                log.info("Sucesso na requisição!")
                 return response.json()
             else:
                 return []
@@ -162,11 +180,11 @@ def get_matches_48h():
                 status_code = response
             else:
                 status_code = 'Erro desconhecido'
-            print(f"Falha na tentativa {i+1}: Status {status_code}")
+            log.warning(f"Falha na tentativa {i+1}: Status {status_code}")
             
             if i < tentativas - 1: # Se não for a última tentativa
                 espera = (i + 1) * 5 # 5s, 10s...
-                # print(f"Aguardando {espera}s para tentar novamente...")
+                log.info(f"Aguardando {espera}s para tentar novamente...")
                 time.sleep(espera)
             else:
                 registrar_log(f"Erro persistente após {tentativas} tentativas: {e}")
@@ -198,12 +216,14 @@ def processar_matches():
 
         partidas_limpas.append(objeto_partida)
 
+    log.info(f"Processadas {len(partidas_limpas)} partidas da API")
     return partidas_limpas
 
 def gravar_partidas_banco(partidas):
     conn = get_db()
     cursor = conn.cursor()
     hoje_br = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime('%Y-%m-%d')
+    log.info(f"Gravando {len(partidas)} partidas no banco...")
     
     sql_upsert = """
     INSERT INTO partidas (id_api, time_1, time_2, liga_nome, liga_logo, timestamp_UTC, timestamp_BR)
@@ -243,12 +263,14 @@ def gravar_partidas_banco(partidas):
         cursor.execute(sql_upsert, valores)
     
     conn.commit()
+    log.info(f"Partidas gravadas/atualizadas com sucesso. Mudanças de horário detectadas: {len(mudancas_horario)}")
 
     if mudancas_horario:
         avisar_mudanca_horario(mudancas_horario)
 
 def avisar_mudanca_horario(lista_mudancas):
     global CONFIG_WEBHOOKS
+    log.warning(f"Enviando aviso de mudança de horário para {len(lista_mudancas)} partida(s)")
     for m in lista_mudancas:
         dt_v = datetime.fromisoformat(m['velho'].replace('Z', '+00:00')).strftime('%d/%m %H:%M')
         dt_n = datetime.fromisoformat(m['novo'].replace('Z', '+00:00')).strftime('%d/%m %H:%M')
@@ -302,6 +324,7 @@ def verifica_warm():
     cursor.execute(query_10min)
     lista_10min = [row[0] for row in cursor.fetchall()]
     
+    log.info(f"Warm-ups detectados - 2h: {len(lista_2h)}, 1h: {len(lista_1h)}, 10min: {len(lista_10min)}")
     return lista_2h, lista_1h, lista_10min
 
 CONFIG_WEBHOOKS = [
@@ -358,6 +381,7 @@ def enviar_dia_lista():
             r = requests.post(url, json=payload)
             r.raise_for_status()
             
+        log.info(f"Lista de partidas do dia enviada com sucesso para {len(CONFIG_WEBHOOKS)} webhook(s)")
     except Exception as e:
         registrar_log(f"Erro ao enviar lista do dia: {e}")
 
@@ -417,11 +441,13 @@ def realiza_warm(lista_2h, lista_1h, lista_10min):
                 cursor.execute(f"UPDATE partidas SET {campo} = 1 WHERE id_api = ?", (id_api,))
 
     conn.commit()
+    log.info("Warm-ups enviados para Discord com sucesso")
 
 
 def deletar_partidas_antigas():
     conn = get_db()
     cursor = conn.cursor()
+    log.info("Executando limpeza de partidas antigas...")
     try:
 
         query = """
@@ -466,9 +492,9 @@ def uptade_banco_times():
     conn.commit()
     
 def main_function():
-    # print("Primeira carga de dados ao iniciar...")
+    log.info("Primeira carga de dados ao iniciar...")
     atualizar_partidas() 
-    registrar_log("bot iniciado e primeira carga de partidas realizada com sucesso.", "Bot Iniciado")
+    log.info("Bot iniciado com sucesso. Iniciando loop principal...")
     
     while True:
         time.sleep(30) 
@@ -478,7 +504,7 @@ def main_function():
         uptade_banco_times()
 
         if is_new_hora:
-            # print(f"Atualizando partidas...")
+            log.info("Atualizando partidas...")
             processar_hora()
         
         if is_new_minuto:
@@ -488,6 +514,7 @@ def main_function():
             processar_dia()
 
 def registrar_log(mensagem_erro, título="Erro Detectado no Bot"):
+    log.error(mensagem_erro)
     WEBHOOK_ERROS = os.getenv("WEBHOOK_URL_3")
     agora = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime('%d/%m/%Y %H:%M:%S')
     
@@ -508,7 +535,7 @@ def registrar_log(mensagem_erro, título="Erro Detectado no Bot"):
         r = requests.post(WEBHOOK_ERROS, json=payload)
         r.raise_for_status()
     except Exception as e:
-        print(f"Falha crítica ao enviar log para o Discord: {e}")
+        log.error(f"Falha crítica ao enviar log para o Discord: {e}")
 
 
 iniciar()

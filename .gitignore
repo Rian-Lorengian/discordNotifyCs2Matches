@@ -1,3 +1,4 @@
 .env
 squarecloud.config
 cs2_matches.db
+bot.log
