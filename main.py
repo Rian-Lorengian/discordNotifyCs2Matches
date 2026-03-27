@@ -173,7 +173,7 @@ def realiza_warm(lista_2h, lista_1h, lista_10min):
                 dc.enviar_warm(id_api, campo, titulo, cor, partida, CONFIG_WEBHOOKS)
                 db.marcar_warm_enviado(campo, id_api)
 
-    log.info("Warm-ups enviados para Discord com sucesso")
+    # log.info("Warm-ups enviados para Discord com sucesso")
 
 
 def deletar_partidas_antigas():
@@ -185,11 +185,12 @@ def deletar_partidas_antigas():
     
 
 def atualizar_partidas():
+    logging.info("Atualizando partidas da API...")
     partidas = processar_matches()
     gravar_partidas_banco(partidas)
 
 def processar_minuto():
-    logging.info("Processar minuto executado")
+    # logging.info("Processar minuto executado")
     l2h, l1h, l10min = verifica_warm()
     realiza_warm(l2h, l1h, l10min)
 
