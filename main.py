@@ -1,18 +1,5 @@
 from dotenv import load_dotenv
 import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%d/%m/%Y %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(),                        # console
-        logging.FileHandler("bot.log", encoding="utf-8")  # arquivo
-    ]
-)
-
-log = logging.getLogger(__name__)
-
 from config import CONFIG_WEBHOOKS, WEBHOOK_LOGS, IDS_TIMES, BEARER_TOKEN
 import discord as dc
 import database as db
@@ -21,6 +8,23 @@ from datetime import datetime, timedelta, timezone
 import requests
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.blocking import BlockingScheduler
+
+class BRFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=ZoneInfo("America/Sao_Paulo"))
+        return dt.strftime(datefmt or "%d/%m/%Y %H:%M:%S")
+
+formatter = BRFormatter(fmt="%(asctime)s [%(levelname)s] %(message)s", datefmt="%d/%m/%Y %H:%M:%S")
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+
+file_handler = logging.FileHandler("bot.log", encoding="utf-8")
+file_handler.setFormatter(formatter)
+
+logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler])
+
+log = logging.getLogger(__name__)
 
 def iniciar():
     start_banco()
