@@ -16,16 +16,14 @@ log = logging.getLogger(__name__)
 from config import CONFIG_WEBHOOKS, WEBHOOK_LOGS, IDS_TIMES, BEARER_TOKEN
 import discord as dc
 import database as db
-import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 import requests
 from zoneinfo import ZoneInfo
-import os
+from apscheduler.schedulers.blocking import BlockingScheduler
 
 def iniciar():
     start_banco()
-    atualizar_partidas()
     main_function()
 
 
@@ -33,8 +31,6 @@ def get_data():
     agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
     return (agora.hour, agora.minute, agora.day)
 
-def get_data_banco():
-    return db.buscar_times()
 
 def formatar_data_BR(data_api):
     dt_utc = datetime.fromisoformat(data_api.replace('Z', '+00:00'))
@@ -44,39 +40,6 @@ def formatar_data_BR(data_api):
     data_formatada = dt_br.strftime('%Y-%m-%dT%H:%M:%SZ')
     
     return data_formatada
-
-ultimo_minuto_rodado = -1
-
-def verifica_novo():
-    global ultimo_minuto_rodado
-    hora_atual, minuto_atual, dia_atual = get_data()
-    hora_banco, minuto_banco, dia_banco = get_data_banco()
-
-    is_new_hora = False
-    is_new_minuto = False
-    is_new_dia = False
-
-    minutos_alvo = [0, 20, 40]
-    for minuto in minutos_alvo:
-        if(minuto == minuto_atual and minuto != ultimo_minuto_rodado):
-            is_new_hora = True
-            ultimo_minuto_rodado = minuto
-
-    if(hora_atual != hora_banco):
-        is_new_hora = True
-        ultimo_minuto_rodado = minuto_atual
-        log.info("Nova hora detectada - atualizando partidas")
-        if(hora_atual == 0):
-            enviar_dia_lista()
-    
-    if(minuto_atual != minuto_banco):
-        is_new_minuto = True
-
-    if(dia_atual != dia_banco):
-        is_new_dia = True
-        log.info("Novo dia detectado - executando limpeza")
-
-    return is_new_hora, is_new_minuto, is_new_dia
 
 
 def start_banco():
@@ -212,40 +175,37 @@ def atualizar_partidas():
     partidas = processar_matches()
     gravar_partidas_banco(partidas)
 
-def processar_hora():
-    atualizar_partidas()
-
 def processar_minuto():
+    logging.info("Processar minuto executado")
     l2h, l1h, l10min = verifica_warm()
     realiza_warm(l2h, l1h, l10min)
 
 def processar_dia():
     deletar_partidas_antigas()
-
-def uptade_banco_times():
-    hora, minuto, dia = get_data()
-    db.atualizar_times(hora, minuto, dia)
     
 def main_function():
     log.info("Primeira carga de dados ao iniciar...")
+    atualizar_partidas()
     log.info("Bot iniciado com sucesso. Iniciando loop principal...")
     
-    while True:
-        time.sleep(30) 
-        
-        is_new_hora, is_new_minuto, is_new_dia = verifica_novo()
+    scheduler = BlockingScheduler(timezone="America/Sao_Paulo")
 
-        uptade_banco_times()
+    # A cada 20 minutos — busca partidas na API
+    scheduler.add_job(atualizar_partidas, "interval", minutes=20)
 
-        if is_new_hora:
-            log.info("Atualizando partidas...")
-            processar_hora()
-        
-        if is_new_minuto:
-            processar_minuto()
+    # A cada 1 minuto — verifica warms
+    scheduler.add_job(processar_minuto, "interval", minutes=1)
 
-        if is_new_dia:
-            processar_dia()
+    # Todo dia à meia-noite — envia lista do dia e limpa partidas antigas
+    scheduler.add_job(enviar_dia_lista, "cron", hour=0, minute=0)
+    scheduler.add_job(processar_dia,    "cron", hour=0, minute=1)
+
+    log.info("Scheduler iniciado.")
+
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        log.info("Bot encerrado.")
 
 def registrar_log(mensagem_erro, título="Erro Detectado no Bot"):
     dc.registrar_log(mensagem_erro, título, WEBHOOK_LOGS)
