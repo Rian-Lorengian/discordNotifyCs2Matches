@@ -16,6 +16,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 import discord as dc
+import database as db
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
@@ -23,19 +24,10 @@ import requests
 from zoneinfo import ZoneInfo
 import os
 
-DB_PATH = "cs2_matches.db"
-_conn = None
-
-def get_db():
-    global _conn
-    if _conn is None:
-        _conn = sqlite3.connect(DB_PATH)
-    return _conn
-
 def iniciar():
     # registrar_log('Bot Iniciado', "Bot Iniciado")
     start_banco()
-    # atualizar_partidas()
+    atualizar_partidas()
     main_function()
 
 
@@ -44,11 +36,7 @@ def get_data():
     return (agora.hour, agora.minute, agora.day)
 
 def get_data_banco():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT last_hour, last_minuto, last_dia FROM times WHERE id = 1")
-    hora, minuto, dia = cursor.fetchone()
-    return (hora, minuto, dia)
+    return db.buscar_times()
 
 def formatar_data_BR(data_api):
     dt_utc = datetime.fromisoformat(data_api.replace('Z', '+00:00'))
@@ -94,48 +82,7 @@ def verifica_novo():
 
 
 def start_banco():
-    conn = get_db()
-    cursor = conn.cursor()
-    log.info("Inicializando banco de dados...")
-    cursor.execute('''
-                CREATE TABLE IF NOT EXISTS times(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                last_hour INTEGER,
-                last_minuto INTEGER,
-                last_dia INTEGER,
-                first_req INTEGER,
-                sec_req INTEGER
-                )''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS partidas(
-            id_api INTEGER PRIMARY KEY,
-            time_1 TEXT,
-            time_2 TEXT,
-            liga_nome TEXT,
-            liga_logo TEXT,
-            timestamp_UTC TEXT,
-            timestamp_BR TEXT,
-            warm_2h INTEGER DEFAULT 1,
-            warm_1h INTEGER DEFAULT 1,
-            warm_final INTEGER DEFAULT 0
-        )''')
-
-    conn.commit()
-    log.info("Tabelas do banco criadas/verficadas com sucesso")
-
-    cursor.execute("SELECT * from times WHERE id = 1")
-    temp_a = cursor.fetchone()
-    
-    hora, minuto, dia = get_data() 
-    
-    if temp_a == None:
-        sql = "INSERT INTO times (last_hour, last_minuto, last_dia, first_req, sec_req) VALUES (?, ?, ?, ?, ?)"
-    else:
-        sql = "UPDATE times SET last_hour = ?, last_minuto = ?, last_dia = ?, first_req = ?, sec_req = ? WHERE id = 1"
-    
-    cursor.execute(sql, (hora, minuto, dia, False, False))
-    conn.commit()
+    db.iniciar_banco()
 
 def get_matches_48h():
     now = datetime.now(timezone.utc)
@@ -221,96 +168,16 @@ def processar_matches():
     return partidas_limpas
 
 def gravar_partidas_banco(partidas):
-    conn = get_db()
-    cursor = conn.cursor()
-    hoje_br = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime('%Y-%m-%d')
-    log.info(f"Gravando {len(partidas)} partidas no banco...")
-    
-    sql_upsert = """
-    INSERT INTO partidas (id_api, time_1, time_2, liga_nome, liga_logo, timestamp_UTC, timestamp_BR)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id_api) DO UPDATE SET
-        time_1 = excluded.time_1,
-        time_2 = excluded.time_2,
-        liga_nome = excluded.liga_nome,
-        liga_logo = excluded.liga_logo,
-        timestamp_UTC = excluded.timestamp_UTC,
-        warm_final = CASE WHEN timestamp_BR != excluded.timestamp_BR THEN 0 ELSE warm_final END,
-        timestamp_BR = excluded.timestamp_BR;
-    """
-    
-    mudancas_horario = []
-
-    for p in partidas:
-        # 1. Verifica se a partida já existe
-        cursor.execute("SELECT timestamp_BR FROM partidas WHERE id_api = ?", (p['id_api'],))
-        resultado = cursor.fetchone()
-        
-        if resultado:
-            horario_antigo = resultado[0]
-            horario_novo = p['timestamp_br']
-            
-            # Condição 1 o horário mudou?
-            # Condição 2 a nova data da partida é HOJE? (comparamos os primeiros 10 caracteres: YYYY-MM-DD)
-            if horario_antigo != horario_novo and horario_novo[:10] == hoje_br:
-                mudancas_horario.append({
-                    "time_1": p['time_1'],
-                    "time_2": p['time_2'],
-                    "velho": horario_antigo,
-                    "novo": horario_novo
-                })
-
-        valores = (p['id_api'], p['time_1'], p['time_2'], p['liga_nome'], p['liga_logo'], p['timestamp_utc'], p['timestamp_br'])
-        cursor.execute(sql_upsert, valores)
-    
-    conn.commit()
-    log.info(f"Partidas gravadas/atualizadas com sucesso. Mudanças de horário detectadas: {len(mudancas_horario)}")
-
-    if mudancas_horario:
-        avisar_mudanca_horario(mudancas_horario)
+    mudancas = db.gravar_partidas(partidas)
+    if mudancas:
+        avisar_mudanca_horario(mudancas)
 
 def avisar_mudanca_horario(lista_mudancas):
     global CONFIG_WEBHOOKS
     dc.avisar_mudanca_horario(lista_mudancas, CONFIG_WEBHOOKS)
 
 def verifica_warm():
-    conn = get_db()
-    cursor = conn.cursor()
-    lista_2h = []
-    lista_1h = []
-    lista_10min = []
-
-    # 1. Entre 2h e 1h (Faltando 120 a 60 minutos)
-    query_2h = """
-    SELECT id_api FROM partidas 
-    WHERE warm_2h = 0 
-      AND (julianday(timestamp_BR) - julianday('now', '-3 hours')) * 1440 <= 120
-      AND (julianday(timestamp_BR) - julianday('now', '-3 hours')) * 1440 > 60
-    """
-    cursor.execute(query_2h)
-    lista_2h = [row[0] for row in cursor.fetchall()]
-
-    # 2. Entre 1h e 10 min (Faltando 60 a 10 minutos)
-    query_1h = """
-    SELECT id_api FROM partidas 
-    WHERE warm_1h = 0 
-      AND (julianday(timestamp_BR) - julianday('now', '-3 hours')) * 1440 <= 60
-      AND (julianday(timestamp_BR) - julianday('now', '-3 hours')) * 1440 > 10
-    """
-    cursor.execute(query_1h)
-    lista_1h = [row[0] for row in cursor.fetchall()]
-
-    # 3. Menos de 10 minutos (Faltando 10 a 0 minutos)
-    query_10min = """
-    SELECT id_api FROM partidas 
-    WHERE warm_final = 0 
-      AND (julianday(timestamp_BR) - julianday('now', '-3 hours')) * 1440 <= 10
-    """
-    cursor.execute(query_10min)
-    lista_10min = [row[0] for row in cursor.fetchall()]
-    
-    log.info(f"Warm-ups detectados - 2h: {len(lista_2h)}, 1h: {len(lista_1h)}, 10min: {len(lista_10min)}")
-    return lista_2h, lista_1h, lista_10min
+    return db.buscar_partidas_warm()
 
 CONFIG_WEBHOOKS = [
     {
@@ -326,29 +193,12 @@ CONFIG_WEBHOOKS = [
     ]
 
 def enviar_dia_lista():
-    global CONFIG_WEBHOOKS
-    conn = get_db()
-    cursor = conn.cursor()
-    
     agora_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
-    hoje_sql = agora_br.strftime('%Y-%m-%d') # Formato para o banco (YYYY-MM-DD)
-    hoje_display = agora_br.strftime('%d/%m/%Y') # Formato para o Discord (DD/MM/YYYY)
-    
-    query = """
-    SELECT time_1, time_2, timestamp_BR, liga_nome 
-    FROM partidas 
-    WHERE date(timestamp_BR) = ?
-    ORDER BY timestamp_BR ASC
-    """
-    
-    cursor.execute(query, (hoje_sql,))
-    partidas = cursor.fetchall()
-
+    hoje_display = agora_br.strftime('%d/%m/%Y')
+    partidas = db.buscar_partidas_hoje()
     dc.enviar_dia_lista(partidas, CONFIG_WEBHOOKS, hoje_display)
 
 def realiza_warm(lista_2h, lista_1h, lista_10min):
-    conn = get_db()
-    cursor = conn.cursor()
     global CONFIG_WEBHOOKS
 
     categorias = [
@@ -359,40 +209,21 @@ def realiza_warm(lista_2h, lista_1h, lista_10min):
 
     for ids, campo, titulo, cor in categorias:
         for id_api in ids:
-            cursor.execute("SELECT time_1, time_2, timestamp_BR, liga_nome, liga_logo FROM partidas WHERE id_api = ?", (id_api,))
-            partida = cursor.fetchone()
+            partida = db.buscar_dados_partida(id_api)
 
             if partida:
                 dc.enviar_warm(id_api, campo, titulo, cor, partida, CONFIG_WEBHOOKS)
-                cursor.execute(f"UPDATE partidas SET {campo} = 1 WHERE id_api = ?", (id_api,))
+                db.marcar_warm_enviado(campo, id_api)
 
-    conn.commit()
     log.info("Warm-ups enviados para Discord com sucesso")
 
 
 def deletar_partidas_antigas():
-    conn = get_db()
-    cursor = conn.cursor()
-    log.info("Executando limpeza de partidas antigas...")
-    try:
-
-        query = """
-        DELETE FROM partidas 
-        WHERE (julianday('now', '-3 hours') - julianday(timestamp_BR)) >= 1
-        """
-        
-        cursor.execute(query)
-        linhas_removidas = cursor.rowcount
-        
-        conn.commit()
-        
-        if linhas_removidas > 0:
-            registrar_log(f"Limpeza concluída: {linhas_removidas} partidas antigas removidas.", "Limpeza finalizada com sucesso")
-        else:
-            registrar_log("Limpeza executada: Nenhuma partida antiga encontrada para remoção.", "Limpeza finalizada com sucesso")
-            
-    except Exception as e:
-        registrar_log(f"Erro ao deletar partidas antigas: {e}")
+    removidas = db.deletar_partidas_antigas()
+    if removidas > 0:
+        registrar_log(f"Limpeza: {removidas} partidas antigas removidas.", "Limpeza finalizada")
+    else:
+        registrar_log("Limpeza executada: nenhuma partida antiga encontrada.", "Limpeza finalizada")
     
 
 def atualizar_partidas():
@@ -410,12 +241,8 @@ def processar_dia():
     deletar_partidas_antigas()
 
 def uptade_banco_times():
-    conn = get_db()
-    cursor = conn.cursor()
-    hora, minuto, dia = get_data() 
-    sql = "UPDATE times SET last_hour = ?, last_minuto = ?, last_dia = ? WHERE id = 1"
-    cursor.execute(sql, (hora, minuto, dia))
-    conn.commit()
+    hora, minuto, dia = get_data()
+    db.atualizar_times(hora, minuto, dia)
     
 def main_function():
     log.info("Primeira carga de dados ao iniciar...")
