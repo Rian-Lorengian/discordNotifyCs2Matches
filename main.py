@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.blocking import BlockingScheduler
+from logging.handlers import RotatingFileHandler
 
 class BRFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
@@ -19,12 +20,20 @@ formatter = BRFormatter(fmt="%(asctime)s [%(levelname)s] %(message)s", datefmt="
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 
-file_handler = logging.FileHandler("bot.log", encoding="utf-8")
+file_handler = RotatingFileHandler(
+    "bot.log",
+    maxBytes=5 * 1024 * 1024,  
+    backupCount=3,              
+    encoding="utf-8"
+)
 file_handler.setFormatter(formatter)
 
 logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler])
 
 log = logging.getLogger(__name__)
+
+logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
+logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
 
 def iniciar():
     start_banco()
