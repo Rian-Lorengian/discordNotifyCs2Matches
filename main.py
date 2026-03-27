@@ -1,6 +1,4 @@
 from dotenv import load_dotenv
-load_dotenv()
-
 import logging
 
 logging.basicConfig(
@@ -15,6 +13,7 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
+from config import CONFIG_WEBHOOKS, WEBHOOK_LOGS, IDS_TIMES, BEARER_TOKEN
 import discord as dc
 import database as db
 import sqlite3
@@ -25,7 +24,6 @@ from zoneinfo import ZoneInfo
 import os
 
 def iniciar():
-    # registrar_log('Bot Iniciado', "Bot Iniciado")
     start_banco()
     atualizar_partidas()
     main_function()
@@ -93,18 +91,15 @@ def get_matches_48h():
     
     url = "https://api.pandascore.co/csgo/matches"
 
-    #Furia, Pain, Legacy, Imperial, Sharks, Mibr, Fluxo, RedCanads, Gaimim, Oddik
-    ids_dos_times = [124530, 125751, 133708, 3396, 3260, 3250, 131570, 126227, 130566, 131253]
-
     params = {
         "range[begin_at]": f"{start_str},{end_str}",
         "filter[status]": "not_started",
-        "filter[opponent_id]": ",".join(map(str, ids_dos_times)),
+        "filter[opponent_id]": ",".join(map(str, IDS_TIMES)),
         "sort": "begin_at",
     }
 
     headers = {
-        "Authorization": f"Bearer {os.getenv('BEARER_TOKEN_API')}",
+        "Authorization": f"Bearer {BEARER_TOKEN}",
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
@@ -179,19 +174,6 @@ def avisar_mudanca_horario(lista_mudancas):
 def verifica_warm():
     return db.buscar_partidas_warm()
 
-CONFIG_WEBHOOKS = [
-    {
-        "url": os.getenv("WEBHOOK_URL_1"),
-        "mencoes": ["Aviso"]
-    },
-
-    # {
-    #     "url": os.getenv("WEBHOOK_URL_2"),
-    #     "mencoes": ["<@&796530374519160872>"]
-    # },
-
-    ]
-
 def enviar_dia_lista():
     agora_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
     hoje_display = agora_br.strftime('%d/%m/%Y')
@@ -246,7 +228,6 @@ def uptade_banco_times():
     
 def main_function():
     log.info("Primeira carga de dados ao iniciar...")
-    atualizar_partidas() 
     log.info("Bot iniciado com sucesso. Iniciando loop principal...")
     
     while True:
@@ -267,6 +248,6 @@ def main_function():
             processar_dia()
 
 def registrar_log(mensagem_erro, título="Erro Detectado no Bot"):
-    dc.registrar_log(mensagem_erro, título, os.getenv("WEBHOOK_URL_3"))
+    dc.registrar_log(mensagem_erro, título, WEBHOOK_LOGS)
 
 iniciar()
