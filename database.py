@@ -2,6 +2,7 @@ import sqlite3
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from models import Partida
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def buscar_timestamp_partida(id_api):
     return resultado[0] if resultado else None
 
 
-def gravar_partidas(partidas):
+def gravar_partidas(partidas: list[Partida]):
     conn = get_db()
     cursor = conn.cursor()
 
@@ -112,21 +113,21 @@ def gravar_partidas(partidas):
     mudancas_horario = []
 
     for p in partidas:
-        horario_antigo = buscar_timestamp_partida(p['id_api'])
-        horario_novo = p['timestamp_br']
+        horario_antigo = buscar_timestamp_partida(p.id_api) 
+        horario_novo = p.timestamp_br
 
         if horario_antigo and horario_antigo != horario_novo and horario_novo[:10] == hoje_br:
             mudancas_horario.append({
-                "time_1": p['time_1'],
-                "time_2": p['time_2'],
+                "time_1": p.time_1,
+                "time_2": p.time_2,
                 "velho": horario_antigo,
                 "novo": horario_novo
             })
 
         valores = (
-            p['id_api'], p['time_1'], p['time_2'],
-            p['liga_nome'], p['liga_logo'],
-            p['timestamp_utc'], p['timestamp_br']
+            p.id_api, p.time_1, p.time_2,
+            p.liga_nome, p.liga_logo,
+            p.timestamp_utc, p.timestamp_br
         )
         cursor.execute(sql_upsert, valores)
 

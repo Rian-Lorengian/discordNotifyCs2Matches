@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import time
+from models import WebhookConfig
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -29,13 +31,13 @@ def enviar_webhook(url, payload):
         log.error(f"Erro ao enviar para o webhook {url}: {e}")
 
 
-def enviar_para_todos(config_webhooks, embed=None, conteudo=""):
+def enviar_para_todos(config_webhooks: list[WebhookConfig], embed=None, conteudo=""):
     for config in config_webhooks:
-        mencoes = " ".join(config["mencoes"])
-        payload = {"content": f"{mencoes}\n{conteudo}" if conteudo else mencoes}
+        mencoes = " ".join(config.mencoes)
+        payload: dict[str, Any] = {"content": f"{mencoes}\n{conteudo}" if conteudo else mencoes}
         if embed:
             payload["embeds"] = [embed]
-        enviar_webhook(config["url"], payload)
+        enviar_webhook(config.url, payload)
         time.sleep(2)
 
 

@@ -9,6 +9,7 @@ import requests
 from zoneinfo import ZoneInfo
 from apscheduler.schedulers.blocking import BlockingScheduler
 from logging.handlers import RotatingFileHandler
+from models import Partida
 
 class BRFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
@@ -120,20 +121,16 @@ def processar_matches():
         time_2 = oponentes[1]['opponent']['name'] if len(oponentes) >= 2 else "TBD"
         
         dados_liga = partida.get('league', {})
-        liga_nome = dados_liga.get('name', 'Liga Desconhecida')
-        liga_logo = dados_liga.get('image_url') or "https://static.wikia.nocookie.net/logopedia/images/4/49/Counter-Strike_2_%28Icon%29.png/revision/latest?cb=20230330015359"
 
-        objeto_partida = {
-            "id_api": partida['id'],
-            "time_1": time_1,
-            "time_2": time_2,
-            "liga_nome": liga_nome,
-            "liga_logo": liga_logo, 
-            "timestamp_utc": partida['begin_at'], 
-            "timestamp_br": formatar_data_BR(partida['begin_at'])
-        }
-
-        partidas_limpas.append(objeto_partida)
+        partidas_limpas.append(Partida(
+            id_api=partida['id'],
+            time_1=time_1,
+            time_2=time_2,
+            liga_nome=dados_liga.get('name', 'Liga Desconhecida'),
+            liga_logo=dados_liga.get('image_url') or "https://static.wikia.nocookie.net/logopedia/images/4/49/Counter-Strike_2_%28Icon%29.png/revision/latest?cb=20230330015359",
+            timestamp_utc=partida['begin_at'],
+            timestamp_br=formatar_data_BR(partida['begin_at'])
+        ))
 
     log.info(f"Processadas {len(partidas_limpas)} partidas da API")
     return partidas_limpas
