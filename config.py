@@ -21,7 +21,7 @@ WEBHOOK_LOGS = _exigir("WEBHOOK_URL_3")
 
 CONFIG_WEBHOOKS = [
     WebhookConfig(url=_exigir("WEBHOOK_URL_1"), mencoes=["Aviso"]),
-    # WebhookConfig(url=_exigir("WEBHOOK_URL_2"), mencoes=["<@&796530374519160872>"]),
+    WebhookConfig(url=_exigir("WEBHOOK_URL_2"), mencoes=["<@&796530374519160872>"]),
 ]
 
 # Times monitorados
