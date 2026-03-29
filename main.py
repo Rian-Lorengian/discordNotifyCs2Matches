@@ -9,6 +9,7 @@ from logging.handlers import RotatingFileHandler
 import api
 import asyncio
 
+# Configuração de Logging
 class BRFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
         dt = datetime.fromtimestamp(record.created, tz=ZoneInfo("America/Sao_Paulo"))
@@ -21,8 +22,8 @@ console_handler.setFormatter(formatter)
 
 file_handler = RotatingFileHandler(
     "bot.log",
-    maxBytes=5 * 1024 * 1024,  
-    backupCount=3,              
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
     encoding="utf-8"
 )
 file_handler.setFormatter(formatter)
@@ -35,36 +36,12 @@ logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
 logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-def iniciar():
-    start_banco()
-    main_function()
-
-async def main_async():
-    db.iniciar_banco()
-    await atualizar_partidas() 
-    log.info("Bot iniciado com sucesso. Iniciando loop principal...")
-
-    scheduler = AsyncIOScheduler(timezone="America/Sao_Paulo")
-    scheduler.add_job(atualizar_partidas, "interval", minutes=20)
-    scheduler.add_job(processar_minuto,   "interval", minutes=1)
-    scheduler.add_job(job_enviar_dia_lista, "cron", hour=0, minute=0)
-    scheduler.add_job(processar_dia, "cron", hour=0, minute=1)
-
-    scheduler.start()
-    log.info("Scheduler iniciado.")
-
-    await asyncio.Event().wait()
-
+# Utilitários Gerais
 def get_data():
     agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
     return (agora.hour, agora.minute, agora.day)
 
-async def job_enviar_dia_lista():
-    agora_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
-    partidas = db.buscar_partidas_hoje()
-    await dc.enviar_dia_lista(partidas, CONFIG_WEBHOOKS, agora_br.strftime('%d/%m/%Y'))
-    logging.info("Lista diária de partidas enviada para Discord.")
-
+# Funções de Banco de Dados
 def start_banco():
     db.iniciar_banco()
 
@@ -80,6 +57,20 @@ def avisar_mudanca_horario(lista_mudancas):
 
 def verifica_warm():
     return db.buscar_partidas_warm()
+
+async def deletar_partidas_antigas():
+    removidas = db.deletar_partidas_antigas()
+    if removidas > 0:
+        await registrar_log(f"Limpeza: {removidas} partidas antigas removidas.", "Limpeza finalizada")
+    else:
+        await registrar_log("Limpeza executada: nenhuma partida antiga encontrada.", "Limpeza finalizada")
+
+# Funções de Discord
+async def job_enviar_dia_lista():
+    agora_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    partidas = db.buscar_partidas_hoje()
+    await dc.enviar_dia_lista(partidas, CONFIG_WEBHOOKS, agora_br.strftime('%d/%m/%Y'))
+    logging.info("Lista diária de partidas enviada para Discord.")
 
 def enviar_dia_lista():
     agora_br = datetime.now(ZoneInfo("America/Sao_Paulo"))
@@ -106,15 +97,10 @@ async def realiza_warm(lista_2h, lista_1h, lista_10min):
 
     # log.info("Warm-ups enviados para Discord com sucesso")
 
+async def registrar_log(mensagem_erro, título="Erro Detectado no Bot"):
+    await dc.registrar_log(mensagem_erro, título, WEBHOOK_LOGS)
 
-async def deletar_partidas_antigas():
-    removidas = db.deletar_partidas_antigas()
-    if removidas > 0:
-        await registrar_log(f"Limpeza: {removidas} partidas antigas removidas.", "Limpeza finalizada")
-    else:
-        await registrar_log("Limpeza executada: nenhuma partida antiga encontrada.", "Limpeza finalizada")
-    
-
+# Funções de Processamento
 async def atualizar_partidas():
     partidas = api.processar_matches()
     mudancas = db.gravar_partidas(partidas)
@@ -129,10 +115,28 @@ async def processar_minuto():
 async def processar_dia():
     await deletar_partidas_antigas()
 
+# Função Principal
+async def main_async():
+    db.iniciar_banco()
+    await atualizar_partidas()
+    log.info("Bot iniciado com sucesso. Iniciando loop principal...")
+
+    scheduler = AsyncIOScheduler(timezone="America/Sao_Paulo")
+    scheduler.add_job(atualizar_partidas, "interval", minutes=20)
+    scheduler.add_job(processar_minuto,   "interval", minutes=1)
+    scheduler.add_job(job_enviar_dia_lista, "cron", hour=0, minute=0)
+    scheduler.add_job(processar_dia, "cron", hour=0, minute=1)
+
+    scheduler.start()
+    log.info("Scheduler iniciado.")
+
+    await asyncio.Event().wait()
+
 def main_function():
     asyncio.run(main_async())
 
-async def registrar_log(mensagem_erro, título="Erro Detectado no Bot"):
-    await dc.registrar_log(mensagem_erro, título, WEBHOOK_LOGS)
+def iniciar():
+    start_banco()
+    main_function()
 
 iniciar()
